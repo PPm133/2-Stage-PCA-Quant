@@ -1,0 +1,46 @@
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from sklearn.decomposition import TruncatedSVD
+from scipy.stats.mstats import winsorize
+import scipy.linalg as la
+
+def compute_exponential_weights(tau, t):
+    decay_weights = np.exp(-np.arange(t-1, -1, -1) / tau)
+    kappa = t / np.sum(decay_weights)
+    normalized_weights = kappa * decay_weights
+    W_tau_f = np.diag(normalized_weights)
+    print(W_tau_f.shape)
+    return W_tau_f
+
+def truncate(U, S, Vt, l):
+    U_p = U[:,:l]
+    S_p = S[:l]
+    Vt_p = Vt[:l, :]
+    return U_p, S_p, Vt_p
+
+def final_model(R, tau_f, tau_s, p, m):
+    n, T = R.shape
+    W_tau_f = compute_exponential_weights(tau_f, T)
+    R_tilde = R @ W_tau_f
+    
+    U, S, Vt = np.linalg.svd(R_tilde)
+    U_p, S_p, Vt_p = truncate(U, S, Vt, p)
+    print(np.linalg.norm(R_tilde - U_p @ np.diag(S_p) @ Vt_p, 'fro')**2 / np.linalg.norm(R_tilde, 'fro')**2)
+    E = R_tilde - U_p @ np.diag(S_p) @ Vt_p
+    sigma_squared = np.mean(E**2, axis=1)
+    sigma_inv = 1 / np.sqrt(sigma_squared)
+    W_sigma = np.diag(sigma_inv)
+
+    W_tau_s = compute_exponential_weights(tau_s, T)
+    R_cap = W_sigma @ R @ W_tau_s
+
+    U, S, Vt = la.svd(R_cap)
+    U_m, S_m, Vt_m = truncate(U, S, Vt, m)
+    print(np.linalg.norm(R_cap - U_m @ np.diag(S_m) @ Vt_m, 'fro')**2 / np.linalg.norm(R_cap, 'fro')**2)
+    B = la.inv(W_sigma) @ U_m 
+    print(S_m)
+    F = U_m.T @ R_cap
+    Res = R - B @ F
+
+    return B, F, Res
